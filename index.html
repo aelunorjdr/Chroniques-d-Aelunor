@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chroniques d'Aelunor — Écoutes</title>
+<style>
+:root {
+  --bg: #f7f5f2; --card: #ffffff; --text: #1c1a17; --muted: #6b6459;
+  --accent: #8b3a3a; --border: #e5e0d8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17140f; --card: #211d17; --text: #f2ede4; --muted: #a39a8c;
+    --accent: #d98c5f; --border: #3a332a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: Georgia, 'Times New Roman', serif;
+  min-height: 100vh; padding: 24px 16px 48px;
+}
+h1 { font-size: 1.4rem; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+.pseudo-bar { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.pseudo-bar input {
+  flex: 1; min-width: 140px; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--card); color: var(--text); font-family: inherit;
+}
+button {
+  padding: 10px 16px; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent); color: white; font-family: inherit; cursor: pointer;
+}
+.track {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px; margin-bottom: 14px;
+}
+.track h3 { margin: 0 0 10px; font-size: 1.05rem; }
+.player { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.player button {
+  padding: 8px 12px; font-size: 1rem; border-radius: 50%; width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+}
+.player button.loopBtn { background: transparent; color: var(--muted); border-color: var(--border); }
+.player button.loopBtn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.timeLabel { font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stats { font-size: 0.8rem; color: var(--muted); }
+.stats .who { display: inline-block; margin-right: 10px; }
+.badge {
+  display: inline-block; background: var(--accent); color: white; border-radius: 6px;
+  padding: 2px 8px; font-size: 0.75rem; margin-left: 6px;
+}
+.empty { color: var(--muted); font-style: italic; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<h1>🎧 Chroniques d'Aelunor — Écoutes</h1>
+<div class="sub">Site privé, sans lien avec Spotify — juste pour écouter entre nous et voir qui a écouté quoi.</div>
+
+<div class="pseudo-bar">
+  <input id="pseudoInput" type="text" placeholder="Ton pseudo (ex: Kerian)" />
+  <button id="savePseudo">Valider</button>
+</div>
+
+<div id="tracks"></div>
+
+<script>
+// Liste des morceaux : titre affiché + nom du fichier dans /audio/
+const TRACKS = [
+  { id: "cyriac", title: "La Légende de Cyriac", file: "audio/cyriac.mp3" },
+  { id: "ezechiel", title: "Le Poids d'Ezéchiel", file: "audio/ezechiel.mp3" },
+  { id: "tony", title: "Tony le Healer", file: "audio/tony.mp3" },
+  { id: "kerian", title: "Kerian le Roi", file: "audio/kerian-le-roi.flac" },
+];
+
+let pseudo = localStorage.getItem('aelunor_pseudo') || '';
+document.getElementById('pseudoInput').value = pseudo;
+
+document.getElementById('savePseudo').onclick = () => {
+  pseudo = document.getElementById('pseudoInput').value.trim();
+  if (pseudo) localStorage.setItem('aelunor_pseudo', pseudo);
+};
+
+function fmt(t) {
+  if (!isFinite(t)) return '0:00';
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+async function fetchViews() {
+  try {
+    const res = await fetch('/.netlify/functions/views');
+    return await res.json();
+  } catch (e) {
+    return {};
+  }
+}
+
+async function logPlay(trackId) {
+  if (!pseudo) { alert("Entre ton pseudo d'abord !"); return; }
+  try {
+    const res = await fetch('/.netlify/functions/views', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackId, pseudo }),
+    });
+    const data = await res.json();
+    renderStats(data);
+  } catch (e) { /* silent */ }
+}
+
+function renderStats(viewsData) {
+  TRACKS.forEach(track => {
+    const perTrack = viewsData[track.id] || {};
+    const total = Object.values(perTrack).reduce((a, b) => a + b, 0);
+    const badge = document.querySelector(`.badge[data-track-id="${track.id}"]`);
+    const stats = document.querySelector(`.stats[data-track-id="${track.id}"]`);
+    if (badge) badge.textContent = `${total} écoute${total !== 1 ? 's' : ''}`;
+    if (stats) {
+      const entries = Object.entries(perTrack).sort((a, b) => b[1] - a[1]);
+      stats.innerHTML = entries.length
+        ? entries.map(([p, c]) => `<span class="who">${escapeHtml(p)}: ${c}</span>`).join('')
+        : "Personne n'a encore écouté.";
+    }
+  });
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function renderTracks() {
+  const container = document.getElementById('tracks');
+  container.innerHTML = TRACKS.map(t => `
+    <div class="track">
+      <h3>${escapeHtml(t.title)} <span class="badge" data-track-id="${t.id}">0 écoute</span></h3>
+      <div class="player">
+        <button class="playBtn" data-track-id="${t.id}">▶️</button>
+        <button class="loopBtn" data-track-id="${t.id}" title="Lecture en boucle">🔁</button>
+        <span class="timeLabel" data-track-id="${t.id}">0:00 / 0:00</span>
+      </div>
+      <audio data-track-id="${t.id}" preload="metadata" style="display:none">
+        <source src="${t.file}" />
+      </audio>
+      <div class="stats" data-track-id="${t.id}"></div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('audio').forEach(audio => {
+    const trackId = audio.dataset.trackId;
+    const playBtn = container.querySelector(`.playBtn[data-track-id="${trackId}"]`);
+    const loopBtn = container.querySelector(`.loopBtn[data-track-id="${trackId}"]`);
+    const timeLabel = container.querySelector(`.timeLabel[data-track-id="${trackId}"]`);
+    let loopEnabled = false;
+
+    playBtn.addEventListener('click', () => {
+      if (audio.paused) audio.play(); else audio.pause();
+    });
+
+    audio.addEventListener('play', () => {
+      playBtn.textContent = '⏸️';
+      container.querySelectorAll('audio').forEach(other => {
+        if (other !== audio && !other.paused) other.pause();
+      });
+    });
+    audio.addEventListener('pause', () => { playBtn.textContent = '▶️'; });
+
+    loopBtn.addEventListener('click', () => {
+      loopEnabled = !loopEnabled;
+      loopBtn.classList.toggle('active', loopEnabled);
+    });
+
+    audio.addEventListener('timeupdate', () => {
+      timeLabel.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+    });
+
+    audio.addEventListener('ended', () => {
+      logPlay(trackId);
+      audio.currentTime = 0;
+      if (loopEnabled) audio.play(); else playBtn.textContent = '▶️';
+    });
+  });
+}
+
+async function init() {
+  renderTracks();
+  const views = await fetchViews();
+  renderStats(views);
+}
+
+init();
+</script>
+</body>
+</html>
