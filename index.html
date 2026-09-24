@@ -66,7 +66,7 @@ body.locked { overflow: hidden; }
 <div class="sub">Site privé, sans lien avec Spotify — juste pour écouter entre nous et voir qui a écouté quoi.</div>
 
 <div class="pseudo-bar">
-  <input id="pseudoInput" type="text" placeholder="Ton pseudo (ex: Bob)" />
+  <input id="pseudoInput" type="text" placeholder="Ton pseudo (ex: Kerian)" />
   <button id="savePseudo">Valider</button>
 </div>
 
@@ -194,15 +194,18 @@ function renderTracks() {
         <button class="loopBtn" data-track-id="${t.id}" title="Lecture en boucle">🔁</button>
         <span class="timeLabel" data-track-id="${t.id}">0:00 / 0:00</span>
       </div>
-      <audio data-track-id="${t.id}" preload="metadata" style="display:none">
-        <source src="${t.file}" />
-      </audio>
+      <audio data-track-id="${t.id}" preload="auto" style="display:none"></audio>
       <div class="stats" data-track-id="${t.id}"></div>
     </div>
   `).join('');
 
   container.querySelectorAll('audio').forEach(audio => {
     const trackId = audio.dataset.trackId;
+    const track = TRACKS.find(t => t.id === trackId);
+    // Utilise une URL absolue basée sur l'adresse réelle de GitHub Pages.
+    // Cela évite les problèmes de chemin relatif sur les sites projet GitHub Pages.
+    audio.src = new URL(track.file, document.baseURI).href;
+    audio.load();
     const playBtn = container.querySelector(`.playBtn[data-track-id="${trackId}"]`);
     const loopBtn = container.querySelector(`.loopBtn[data-track-id="${trackId}"]`);
     const timeLabel = container.querySelector(`.timeLabel[data-track-id="${trackId}"]`);
@@ -225,8 +228,16 @@ function renderTracks() {
       loopBtn.classList.toggle('active', loopEnabled);
     });
 
-    audio.addEventListener('timeupdate', () => {
+    const updateTime = () => {
       timeLabel.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+    };
+
+    audio.addEventListener('loadedmetadata', updateTime);
+    audio.addEventListener('durationchange', updateTime);
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('error', () => {
+      console.error('Impossible de charger la musique :', audio.src, audio.error);
+      timeLabel.textContent = 'Erreur de chargement';
     });
 
     audio.addEventListener('ended', () => {
