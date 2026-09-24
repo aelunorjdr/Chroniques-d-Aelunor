@@ -60,7 +60,6 @@ body.locked { overflow: hidden; }
 .loginBox button { padding: 11px 24px; border: 0; border-radius: 8px; cursor: pointer; }
 .loginError { min-height: 20px; color: #ff6b6b; }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <h1>🎧 Chroniques d'Aelunor — Écoutes</h1>
@@ -79,7 +78,7 @@ const TRACKS = [
   { id: "cyriac", title: "La Légende de Cyriac", file: "audio/cyriac.mp3" },
   { id: "ezechiel", title: "Le Poids d'Ezéchiel", file: "audio/ezechiel.mp3" },
   { id: "tony", title: "Tony le Healer", file: "audio/tony.mp3" },
-  { id: "kerian", title: "Kerian le Roi", file: "audio/kerian-le-roi.mp3" },
+  { id: "kerian", title: "Kerian le Roi", file: "audio/kerian-le-roi.flac" },
 ];
 
 let pseudo = localStorage.getItem('aelunor_pseudo') || '';
@@ -101,7 +100,16 @@ function fmt(t) {
 // Après avoir créé ton projet Supabase, remplace les deux valeurs ci-dessous.
 const SUPABASE_URL = 'https://vicbqtealmvzecmdyldo.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_GZgund8QVqzgUziaQPlSvg_k_GaDqim';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const REST_BASE = SUPABASE_URL + '/rest/v1';
+
+async function supabaseFetch(path, options = {}) {
+  const headers = {
+    'apikey': SUPABASE_PUBLISHABLE_KEY,
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  };
+  return fetch(REST_BASE + path, { ...options, headers });
+}
 
 let sharedViews = {};
 
@@ -109,17 +117,23 @@ async function loadViews() {
   if (SUPABASE_URL.includes('TON-PROJET') || SUPABASE_PUBLISHABLE_KEY.includes('TA_CLE_ICI')) {
     return {};
   }
-  const { data, error } = await supabase.from('aelunor_views').select('track_id, pseudo, count');
-  if (error) {
-    console.error('Erreur chargement des écoutes:', error);
+  try {
+    const response = await supabaseFetch('/aelunor_views?select=track_id,pseudo,count');
+    if (!response.ok) {
+      console.error('Erreur chargement des écoutes:', response.status, await response.text());
+      return sharedViews;
+    }
+    const data = await response.json();
+    sharedViews = {};
+    for (const row of data || []) {
+    if (!sharedViews[row.track_id]) sharedViews[row.track_id] = {};
+      sharedViews[row.track_id][row.pseudo] = Number(row.count) || 0;
+    }
+    return sharedViews;
+  } catch (e) {
+    console.error('Erreur chargement des écoutes:', e);
     return sharedViews;
   }
-  sharedViews = {};
-  for (const row of data || []) {
-    if (!sharedViews[row.track_id]) sharedViews[row.track_id] = {};
-    sharedViews[row.track_id][row.pseudo] = Number(row.count) || 0;
-  }
-  return sharedViews;
 }
 
 async function logPlay(trackId) {
@@ -128,12 +142,20 @@ async function logPlay(trackId) {
     alert('Le compteur partagé n’est pas encore configuré.');
     return;
   }
-  const { error } = await supabase.rpc('increment_aelunor_view', {
-    p_track_id: trackId,
-    p_pseudo: pseudo.slice(0, 40)
-  });
-  if (error) {
-    console.error('Erreur enregistrement écoute:', error);
+  try {
+    const response = await supabaseFetch('/rpc/increment_aelunor_view', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_track_id: trackId,
+        p_pseudo: pseudo.slice(0, 40)
+      })
+    });
+    if (!response.ok) {
+      console.error('Erreur enregistrement écoute:', response.status, await response.text());
+      return;
+    }
+  } catch (e) {
+    console.error('Erreur enregistrement écoute:', e);
     return;
   }
   await loadViews();
